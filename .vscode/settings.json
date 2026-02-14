@@ -1,0 +1,18 @@
+{
+    // 指定 Python 解释器的绝对路径，确保 VS Code 插件能识别环境
+    "python.defaultInterpreterPath": "/mmu_mllm_hdd_2/jinlv/miniconda3/envs/dss/bin/python",
+
+    // 关键配置：终端启动时自动激活该环境
+    "python.terminal.activateEnvInCurrentTerminal": true,
+
+    // 让 VS Code 知道你的 Conda 可执行文件在哪里，修复 "conda not found"
+    "python.condaPath": "/mmu_mllm_hdd_2/jinlv/miniconda3/bin/conda",
+
+    // 启用代码自动补全和语法检查（基于该环境）
+    "python.analysis.typeCheckingMode": "basic",
+    
+    // 如果你使用 Linux 终端，可以强制在启动时执行初始化脚本（可选）
+    "terminal.integrated.env.linux": {
+        "PATH": "/mmu_mllm_hdd_2/jinlv/miniconda3/bin:${env:PATH}"
+    }
+}
