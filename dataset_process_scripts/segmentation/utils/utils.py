@@ -94,9 +94,10 @@ def resize_image_ori(h, w, image, k):
     return img
 
 
-def save_one_video(file_path, videos, fps=8, quality=8, macro_block_size=None):
+def save_one_video(file_path, videos, fps=8, quality=10, macro_block_size=None):
     try:
-        video_writer = imageio.get_writer(file_path, fps=fps, codec='libx264', quality=quality, macro_block_size=macro_block_size)
+        video_writer = imageio.get_writer(file_path, fps=fps, codec='libx264', quality=quality, macro_block_size=macro_block_size,
+                                          pixelformat='yuv444p')
         for frame in videos:
             video_writer.append_data(frame)
         video_writer.close()
