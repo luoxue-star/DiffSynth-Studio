@@ -177,3 +177,5 @@ cython_debug/
 # Vscode
 .vscode/
 demo/
+wandb/
+logs/

@@ -117,6 +117,10 @@ def wan_parser():
     parser.add_argument("--max_timestep_boundary", type=float, default=1.0, help="Max timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
+    parser.add_argument("--wandb_project", type=str, default=None, help="Wandb project name. If set, enables wandb logging.")
+    parser.add_argument("--experiment_name", type=str, default=None, help="Experiment name for wandb. Defaults to the output path folder name.")
+    parser.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"], help="Wandb mode: online, offline, or disabled.")
+    parser.add_argument("--wandb_log_steps", type=int, default=100, help="Log loss and generate sample videos every N steps.")
     return parser
 
 
