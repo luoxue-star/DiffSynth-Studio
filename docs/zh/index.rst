@@ -27,6 +27,8 @@
    Model_Details/Qwen-Image
    Model_Details/FLUX2
    Model_Details/Z-Image
+   Model_Details/Anima
+   Model_Details/LTX-2
 
 .. toctree::
    :maxdepth: 2
@@ -63,6 +65,7 @@
    :caption: 学术导引
 
    Research_Tutorial/train_from_scratch
+   Research_Tutorial/inference_time_scaling
 
 .. toctree::
    :maxdepth: 2

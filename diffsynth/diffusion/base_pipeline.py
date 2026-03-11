@@ -94,20 +94,23 @@ class BasePipeline(torch.nn.Module):
         return self
 
 
-    def check_resize_height_width(self, height, width, num_frames=None):
+    def check_resize_height_width(self, height, width, num_frames=None, verbose=1):
         # Shape check
         if height % self.height_division_factor != 0:
             height = (height + self.height_division_factor - 1) // self.height_division_factor * self.height_division_factor
-            print(f"height % {self.height_division_factor} != 0. We round it up to {height}.")
+            if verbose > 0:
+                print(f"height % {self.height_division_factor} != 0. We round it up to {height}.")
         if width % self.width_division_factor != 0:
             width = (width + self.width_division_factor - 1) // self.width_division_factor * self.width_division_factor
-            print(f"width % {self.width_division_factor} != 0. We round it up to {width}.")
+            if verbose > 0:
+                print(f"width % {self.width_division_factor} != 0. We round it up to {width}.")
         if num_frames is None:
             return height, width
         else:
             if num_frames % self.time_division_factor != self.time_division_remainder:
                 num_frames = (num_frames + self.time_division_factor - 1) // self.time_division_factor * self.time_division_factor + self.time_division_remainder
-                print(f"num_frames % {self.time_division_factor} != {self.time_division_remainder}. We round it up to {num_frames}.")
+                if verbose > 0:
+                    print(f"num_frames % {self.time_division_factor} != {self.time_division_remainder}. We round it up to {num_frames}.")
             return height, width, num_frames
 
 
@@ -144,6 +147,19 @@ class BasePipeline(torch.nn.Module):
         video = [self.vae_output_to_image(image, pattern="H W C", min_value=min_value, max_value=max_value) for image in vae_output]
         return video
 
+    def output_audio_format_check(self, audio_output):
+        # output standard foramt: [C, T], output dtype: float()
+        # remove batch dim
+        if audio_output.ndim == 3:
+            audio_output = audio_output.squeeze(0)
+        # Transform to stereo
+        if audio_output.shape[0] == 1:
+            audio_output = audio_output.repeat(2, 1)
+        elif audio_output.shape[0] == 2:
+            pass
+        else:
+            raise ValueError("The output audio should be [C, T] or [1, C, T] or [2, C, T].")
+        return audio_output.float()
 
     def load_models_to_device(self, model_names):
         if self.vram_management_enabled:
