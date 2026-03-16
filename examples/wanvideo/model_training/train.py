@@ -121,6 +121,8 @@ def wan_parser():
     parser.add_argument("--experiment_name", type=str, default=None, help="Experiment name for wandb. Defaults to the output path folder name.")
     parser.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"], help="Wandb mode: online, offline, or disabled.")
     parser.add_argument("--wandb_log_steps", type=int, default=100, help="Log loss and generate sample videos every N steps.")
+    parser.add_argument("--wandb_run_id", type=str, default=None, help="Wandb run ID to resume from.")
+    parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Path to checkpoint state folder to resume from.")
     return parser
 
 

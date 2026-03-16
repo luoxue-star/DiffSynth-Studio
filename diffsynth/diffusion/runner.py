@@ -20,12 +20,19 @@ def _init_wandb(accelerator, args):
             experiment_name = "default_exp"
     log_dir = os.path.join("logs", experiment_name)
     os.makedirs(log_dir, exist_ok=True)
-    wandb.init(
-        project=args.wandb_project,
-        name=experiment_name,
-        dir=log_dir,
-        config=vars(args),
-    )
+    
+    wandb_run_id = getattr(args, "wandb_run_id", None)
+    init_kwargs = {
+        "project": args.wandb_project,
+        "name": experiment_name,
+        "dir": log_dir,
+        "config": vars(args),
+    }
+    if wandb_run_id is not None:
+        init_kwargs["id"] = wandb_run_id
+        init_kwargs["resume"] = "must"
+        
+    wandb.init(**init_kwargs)
     return wandb
 
 
@@ -85,9 +92,18 @@ def launch_training_task(
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
     model.to(device=accelerator.device)
     model, optimizer, dataloader, scheduler = accelerator.prepare(model, optimizer, dataloader, scheduler)
+    accelerator.register_for_checkpointing(model_logger)
     
-    for epoch_id in range(num_epochs):
-        for data in tqdm(dataloader):
+    if getattr(args, "resume_from_checkpoint", None) is not None:
+        accelerator.print(f"Resuming from checkpoint: {args.resume_from_checkpoint}")
+        accelerator.load_state(args.resume_from_checkpoint)
+
+    start_epoch = model_logger.num_steps // len(dataloader) if len(dataloader) > 0 else 0
+    start_step = model_logger.num_steps % len(dataloader) if len(dataloader) > 0 else 0
+
+    for epoch_id in range(start_epoch, num_epochs):
+        active_dataloader = accelerator.skip_first_batches(dataloader, start_step) if epoch_id == start_epoch and start_step > 0 else dataloader
+        for data in tqdm(active_dataloader):
             with accelerator.accumulate(model):
                 optimizer.zero_grad()
                 if dataset.load_from_cache:

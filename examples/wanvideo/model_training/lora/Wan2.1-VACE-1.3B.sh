@@ -7,6 +7,9 @@ WANDB_PROJECT="VACE"
 EXPERIMENT_NAME="Wan2.1-VACE-1.3B_lora"
 WANDB_MODE="online"
 WANDB_LOG_STEPS=100
+WANDB_RUN_ID=""
+
+RESUME_FROM_CHECKPOINT=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -46,9 +49,17 @@ while [[ $# -gt 0 ]]; do
       WANDB_LOG_STEPS="$2"
       shift 2
       ;;
+    --wandb_run_id)
+      WANDB_RUN_ID="$2"
+      shift 2
+      ;;
+    --resume_from_checkpoint)
+      RESUME_FROM_CHECKPOINT="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1"
-      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps"
+      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps --wandb_run_id --resume_from_checkpoint"
       exit 1
       ;;
   esac
@@ -60,7 +71,7 @@ accelerate launch -m examples.wanvideo.model_training.train \
   --data_file_keys "${DATA_FILE_KEYS}" \
   --height 480 \
   --width 832 \
-  --dataset_repeat 100 \
+  --dataset_repeat 1 \
   --model_id_with_origin_paths "Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/diffusion_pytorch_model.safetensors,Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/Wan2.1_VAE.pth" \
   --learning_rate 1e-4 \
   --num_epochs 5 \
@@ -70,11 +81,13 @@ accelerate launch -m examples.wanvideo.model_training.train \
   --lora_target_modules "q,k,v,o,ffn.0,ffn.2" \
   --lora_rank 32 \
   --extra_inputs "${EXTRA_INPUTS}" \
-  --use_gradient_checkpointing_offload \
+  --use_gradient_checkpointing \
   --wandb_project "${WANDB_PROJECT}" \
   --experiment_name "${EXPERIMENT_NAME}" \
   --wandb_mode "${WANDB_MODE}" \
-  --wandb_log_steps "${WANDB_LOG_STEPS}"
+  --wandb_log_steps "${WANDB_LOG_STEPS}" \
+  ${WANDB_RUN_ID:+--wandb_run_id "$WANDB_RUN_ID"} \
+  ${RESUME_FROM_CHECKPOINT:+--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT"}
 
 # Example:
 # bash examples/wanvideo/model_training/lora/Wan2.1-VACE-1.3B.sh --data_file_keys "video,vace_video,vace_video_mask,vace_reference_image" --extra_inputs "vace_video,vace_video_mask,vace_reference_image"
