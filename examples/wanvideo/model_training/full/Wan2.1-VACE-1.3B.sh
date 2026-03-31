@@ -1,15 +1,15 @@
 CHECKPOINT_DIR="/mmu_mllm_hdd_2/jinlv/VideoEditing/checkpoints"
-DATASET_BASE_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/DiffSynthStudioExample"
-DATASET_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/DiffSynthStudioExample/metadata_vace.csv"
-DATA_FILE_KEYS="video,vace_video,vace_reference_image"
-EXTRA_INPUTS="vace_video,vace_reference_image"
+DATASET_BASE_PATH="./"
+DATASET_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/Custom/VACE/metadata_vace.csv"
+DATA_FILE_KEYS="video,vace_video,vace_video_mask,vace_reference_image"
+EXTRA_INPUTS="vace_video,vace_video_mask,vace_reference_image"
 WANDB_PROJECT="VACE"
 EXPERIMENT_NAME="Wan2.1-VACE-1.3B_full"
 WANDB_MODE="online"
-WANDB_LOG_STEPS=100
 WANDB_RUN_ID=""
-
 RESUME_FROM_CHECKPOINT=""
+WANDB_LOG_STEPS=500
+export WANDB_API_KEY="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"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -71,11 +71,11 @@ accelerate launch -m examples.wanvideo.model_training.train \
   --data_file_keys "${DATA_FILE_KEYS}" \
   --height 480 \
   --width 832 \
-  --num_frames 49 \
+  --num_frames 81 \
   --dataset_repeat 1 \
   --model_id_with_origin_paths "Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.1-VACE-1.3B:${CHECKPOINT_DIR%/}/Wan2.1-VACE-1.3B/Wan2.1_VAE.pth" \
   --learning_rate 5e-5 \
-  --num_epochs 2 \
+  --num_epochs 5 \
   --remove_prefix_in_ckpt "pipe.vace." \
   --output_path "logs/${EXPERIMENT_NAME}/checkpoints" \
   --trainable_models "vace" \

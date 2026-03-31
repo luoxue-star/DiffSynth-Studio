@@ -12,6 +12,7 @@ import copy
 import time
 import numpy as np
 import argparse
+from tqdm import tqdm
 from transformers import Sam3Processor, Sam3Model, Sam3TrackerVideoModel, Sam3TrackerVideoProcessor
 
 from utils.utils import read_image, read_mask, read_video_frames, save_one_video, save_one_image, convert_to_numpy
@@ -146,7 +147,7 @@ def main(args):
     else:
         video_paths = [video_path]
 
-    for v_path in video_paths:
+    for v_path in tqdm(video_paths, total=len(video_paths)):
         print(f"Processing video: {v_path}")
         assert args.pre_save_dir is not None, "Please set --pre_save_dir"
         base_name = os.path.basename(v_path).split('.')[0]

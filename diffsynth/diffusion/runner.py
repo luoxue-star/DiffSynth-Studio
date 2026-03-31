@@ -72,7 +72,7 @@ def launch_training_task(
     learning_rate: float = 1e-5,
     weight_decay: float = 1e-2,
     num_workers: int = 1,
-    save_steps: int = None,
+    save_steps: int = 1000,
     num_epochs: int = 1,
     args = None,
 ):

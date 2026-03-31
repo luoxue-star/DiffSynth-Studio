@@ -30,6 +30,8 @@ def main():
             elif "prompt.txt" in files:
                 with open(os.path.join(root, "prompt.txt"), "r", encoding="utf-8") as f:
                     prompt = f.read().strip()
+            else:
+                continue
             
             # Use relative paths from the base_dir
             base = args.base_dir if args.base_dir else os.getcwd()
