@@ -117,6 +117,39 @@ def usp_dit_forward(self,
     return x
 
 
+def usp_vace_forward(
+    self, x, vace_context, context, t_mod, freqs,
+    use_gradient_checkpointing: bool = False,
+    use_gradient_checkpointing_offload: bool = False,
+):
+    # Compute full sequence length from the sharded x
+    full_seq_len = x.shape[1] * get_sequence_parallel_world_size()
+
+    # Embed vace_context via patch embedding
+    c = [self.vace_patch_embedding(u.unsqueeze(0)) for u in vace_context]
+    c = [u.flatten(2).transpose(1, 2) for u in c]
+    c = torch.cat([
+        torch.cat([u, u.new_zeros(1, full_seq_len - u.size(1), u.size(2))],
+                  dim=1) for u in c
+    ])
+
+    # Chunk VACE context along sequence dim BEFORE processing through blocks
+    c = torch.chunk(c, get_sequence_parallel_world_size(), dim=1)[get_sequence_parallel_rank()]
+
+    # Process through vace_blocks (self_attn already monkey-patched to usp_attn_forward)
+    for block in self.vace_blocks:
+        c = gradient_checkpoint_forward(
+            block,
+            use_gradient_checkpointing,
+            use_gradient_checkpointing_offload,
+            c, x, context, t_mod, freqs
+        )
+
+    # Hints are already sharded per-rank
+    hints = torch.unbind(c)[:-1]
+    return hints
+
+
 def usp_attn_forward(self, x, freqs):
     q = self.norm_q(self.q(x))
     k = self.norm_k(self.k(x))
@@ -144,3 +177,30 @@ def usp_attn_forward(self, x, freqs):
     del q, k, v
     getattr(torch, parse_device_type(x.device)).empty_cache()
     return self.o(x)
+
+
+def get_current_chunk(x, dim=1):
+    chunks = torch.chunk(x, get_sequence_parallel_world_size(), dim=dim)
+    ndims = len(chunks[0].shape)
+    pad_list = [0] * (2 * ndims)
+    pad_end_index = 2 * (ndims - 1 - dim) + 1
+    max_size = chunks[0].size(dim)
+    chunks = [
+        torch.nn.functional.pad(
+            chunk, 
+            tuple(pad_list[:pad_end_index] + [max_size - chunk.size(dim)] + pad_list[pad_end_index+1:]), 
+            value=0
+        ) 
+        for chunk in chunks
+    ]
+    x = chunks[get_sequence_parallel_rank()]
+    return x
+
+
+def gather_all_chunks(x, seq_len=None, dim=1):
+    x = get_sp_group().all_gather(x, dim=dim)
+    if seq_len is not None:
+        slices = [slice(None)] * x.ndim
+        slices[dim] = slice(0, seq_len)
+        x = x[tuple(slices)]
+    return x

@@ -72,6 +72,9 @@ class WanTrainingModule(DiffusionTrainingModule):
                 inputs_shared[extra_input] = data[extra_input][0]
             else:
                 inputs_shared[extra_input] = data[extra_input]
+        if inputs_shared.get("framewise_decoding", False):
+            # WanToDance global model
+            inputs_shared["num_frames"] = 4 * (len(data["video"]) - 1) + 1
         return inputs_shared
     
     def get_pipeline_inputs(self, data):
@@ -123,6 +126,7 @@ def wan_parser():
     parser.add_argument("--wandb_log_steps", type=int, default=100, help="Log loss and generate sample videos every N steps.")
     parser.add_argument("--wandb_run_id", type=str, default=None, help="Wandb run ID to resume from.")
     parser.add_argument("--resume_from_checkpoint", type=str, default=None, help="Path to checkpoint state folder to resume from.")
+    parser.add_argument("--framewise_decoding", default=False, action="store_true", help="Enable it if this model is a WanToDance global model.")
     return parser
 
 
@@ -146,12 +150,13 @@ if __name__ == "__main__":
             height_division_factor=16,
             width_division_factor=16,
             num_frames=args.num_frames,
-            time_division_factor=4,
-            time_division_remainder=1,
+            time_division_factor=4 if not args.framewise_decoding else 1,
+            time_division_remainder=1 if not args.framewise_decoding else 0,
         ),
         special_operator_map={
             "animate_face_video": ToAbsolutePath(args.dataset_base_path) >> LoadVideo(args.num_frames, 4, 1, frame_processor=ImageCropAndResize(512, 512, None, 16, 16)),
             "input_audio": ToAbsolutePath(args.dataset_base_path) >> LoadAudio(sr=16000),
+            "wantodance_music_path": ToAbsolutePath(args.dataset_base_path),
         }
     )
     model = WanTrainingModule(
