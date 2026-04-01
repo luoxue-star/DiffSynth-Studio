@@ -73,7 +73,7 @@ def get_parser():
         "--maskaug_mode",
         type=str,
         default=None,
-        help="Mask augmentation mode, e.g. original, original_expand, hull, hull_expand, bbox, bbox_expand.")
+        help="Mask augmentation mode, e.g. original, original_expand, hull, hull_expand, bbox, bbox_expand, dilate. You can also specify probabilities, e.g. original:0.8,bbox:0.2.")
     parser.add_argument(
         "--maskaug_ratio",
         type=float,
@@ -135,10 +135,21 @@ def main(args):
 
     mask_cfg = None
     if args.maskaug_mode is not None:
+        modes = []
+        weights = []
+        for item in args.maskaug_mode.split(","):
+            if ":" in item:
+                mode, weight = item.split(":")
+                modes.append(mode)
+                weights.append(float(weight))
+            else:
+                modes.append(item)
+                weights.append(1.0)
+        maskaug_mode = random.choices(modes, weights=weights, k=1)[0]
         if args.maskaug_ratio is not None:
-            mask_cfg = {"mode": args.maskaug_mode, "kwargs": {'expand_ratio': args.maskaug_ratio, 'expand_iters': 5}}
+            mask_cfg = {"mode": maskaug_mode, "kwargs": {'expand_ratio': args.maskaug_ratio, 'expand_iters': 5}}
         else:
-            mask_cfg = {"mode": args.maskaug_mode}
+            mask_cfg = {"mode": maskaug_mode}
 
     assert video_path is not None, "Please set --video"
     if os.path.isdir(video_path):

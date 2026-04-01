@@ -31,7 +31,8 @@ class MaskAugAnnotator:
                                              {"mode": "hull", "proba": 0.1},
                                              {"mode": "hull_expand", "proba":0.1, "kwargs": {"expand_ratio": 0.2}},
                                              {"mode": "bbox", "proba": 0.1},
-                                             {"mode": "bbox_expand", "proba": 0.1, "kwargs": {"min_expand_ratio": 0.2, "max_expand_ratio": 0.5}}])
+                                             {"mode": "bbox_expand", "proba": 0.1, "kwargs": {"min_expand_ratio": 0.2, "max_expand_ratio": 0.5}},
+                                             {"mode": "dilate", "proba": 0.1, "kwargs": {"expand_iters": 3}}])
 
     def forward(self, mask, mask_cfg=None):
         mask_cfg = mask_cfg if mask_cfg is not None else self.mask_cfg
@@ -102,7 +103,7 @@ class MaskAugAnnotator:
         mask_kwargs = sel_mask_cfg['kwargs'] if 'kwargs' in sel_mask_cfg else {}
 
         if mode == 'random':
-            mode = random.choice(['original', 'original_expand', 'hull', 'hull_expand', 'bbox', 'bbox_expand'])
+            mode = random.choice(['original', 'original_expand', 'hull', 'hull_expand', 'bbox', 'bbox_expand', 'dilate'])
         if mode == 'original':
             mask_func = partial(self.generate_mask)
         elif mode == 'original_expand':
@@ -120,6 +121,9 @@ class MaskAugAnnotator:
         elif mode == 'bbox_expand':
             expand_ratio, expand_iters, expand_lrtp = self.get_expand_params(mask_kwargs)
             mask_func = partial(self.generate_bbox_mask, expand_ratio=expand_ratio, expand_iters=expand_iters, expand_lrtp=expand_lrtp)
+        elif mode == 'dilate':
+            expand_iters = mask_kwargs.get('expand_iters', 2)
+            mask_func = partial(self.generate_dilate_mask, expand_iters=expand_iters)
         else:
             raise NotImplementedError
         return mask_func
@@ -185,6 +189,10 @@ class MaskAugAnnotator:
         if expand_ratio:
             bin_mask = self.rand_expand_mask(bin_mask, bbox, h, w, expand_ratio, expand_iters, expand_lrtp)
         return bin_mask
+
+    def generate_dilate_mask(self, mask, bbox, h, w, expand_iters=3):
+        kernel = np.ones((3, 3), dtype=np.uint8)
+        return cv2.dilate(mask.astype(np.uint8), kernel, iterations=expand_iters)
 
     def apply_seg_mask(self, mask_data, frames, mask_color, mask_cfg=None):
         # TODO: Add a valid frame idx
