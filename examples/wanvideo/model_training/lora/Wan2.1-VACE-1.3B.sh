@@ -1,6 +1,6 @@
 CHECKPOINT_DIR="/mmu_mllm_hdd_2/jinlv/VideoEditing/checkpoints"
 DATASET_BASE_PATH="./"
-DATASET_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/Custom/VACE/metadata_vace.csv"
+DATASET_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/Custom/VACEv2/metadata_train.csv"
 DATA_FILE_KEYS="video,vace_video,vace_video_mask,vace_reference_image"
 EXTRA_INPUTS="vace_video,vace_video_mask,vace_reference_image"
 WANDB_PROJECT="VACE"
@@ -9,6 +9,11 @@ WANDB_MODE="online"
 WANDB_RUN_ID=""
 RESUME_FROM_CHECKPOINT=""
 WANDB_LOG_STEPS=500
+EVAL_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/Custom/VACEv2/metadata_val.csv"
+EVAL_STEPS=""
+EVAL_NUM_INFERENCE_STEPS=""
+EVAL_SEED=""
+EVAL_SAVE_PATH="logs/${EXPERIMENT_NAME}/eval"
 export WANDB_API_KEY="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"
 
 while [[ $# -gt 0 ]]; do
@@ -57,9 +62,29 @@ while [[ $# -gt 0 ]]; do
       RESUME_FROM_CHECKPOINT="$2"
       shift 2
       ;;
+    --eval_metadata_path)
+      EVAL_METADATA_PATH="$2"
+      shift 2
+      ;;
+    --eval_steps)
+      EVAL_STEPS="$2"
+      shift 2
+      ;;
+    --eval_num_inference_steps)
+      EVAL_NUM_INFERENCE_STEPS="$2"
+      shift 2
+      ;;
+    --eval_seed)
+      EVAL_SEED="$2"
+      shift 2
+      ;;
+    --eval_save_path)
+      EVAL_SAVE_PATH="$2"
+      shift 2
+      ;;
     *)
       echo "Unknown argument: $1"
-      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps --wandb_run_id --resume_from_checkpoint"
+      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps --wandb_run_id --resume_from_checkpoint --eval_metadata_path --eval_steps --eval_num_inference_steps --eval_seed --eval_save_path"
       exit 1
       ;;
   esac
@@ -87,7 +112,14 @@ accelerate launch -m examples.wanvideo.model_training.train \
   --wandb_mode "${WANDB_MODE}" \
   --wandb_log_steps "${WANDB_LOG_STEPS}" \
   ${WANDB_RUN_ID:+--wandb_run_id "$WANDB_RUN_ID"} \
-  ${RESUME_FROM_CHECKPOINT:+--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT"}
+  ${RESUME_FROM_CHECKPOINT:+--resume_from_checkpoint "$RESUME_FROM_CHECKPOINT"} \
+  ${EVAL_METADATA_PATH:+--eval_metadata_path "$EVAL_METADATA_PATH"} \
+  ${EVAL_STEPS:+--eval_steps "$EVAL_STEPS"} \
+  ${EVAL_NUM_INFERENCE_STEPS:+--eval_num_inference_steps "$EVAL_NUM_INFERENCE_STEPS"} \
+  ${EVAL_SEED:+--eval_seed "$EVAL_SEED"} \
+  ${EVAL_SAVE_PATH:+--eval_save_path "$EVAL_SAVE_PATH"}
 
 # Example:
 # bash examples/wanvideo/model_training/lora/Wan2.1-VACE-1.3B.sh --data_file_keys "video,vace_video,vace_video_mask,vace_reference_image" --extra_inputs "vace_video,vace_video_mask,vace_reference_image"
+# With evaluation:
+# bash examples/wanvideo/model_training/lora/Wan2.1-VACE-1.3B.sh --eval_metadata_path "/path/to/eval_metadata.csv" --eval_steps 5000

@@ -1,4 +1,4 @@
-import os, torch, tempfile, numpy as np
+import os, torch, tempfile, numpy as np, random
 from tqdm import tqdm
 from accelerate import Accelerator
 from .training_module import DiffusionTrainingModule
@@ -64,6 +64,84 @@ def _log_wandb_video(wandb, pipe, data, extra_inputs, step):
         print(f"[wandb] Failed to generate sample video at step {step}: {e}")
 
 
+def _run_evaluation(accelerator, model, eval_dataset, eval_save_path, step, wandb=None,
+                    num_inference_steps=50, seed=0, extra_inputs=None, max_eval_samples=5):
+    """Run evaluation on eval dataset and save videos (main process only)."""
+    if not accelerator.is_main_process:
+        return
+
+    from ..utils.data import save_video
+
+    unwrapped = accelerator.unwrap_model(model)
+    pipe = unwrapped.pipe
+    extra_inputs = extra_inputs or []
+
+    # Switch to inference mode
+    pipe.scheduler.set_timesteps(num_inference_steps, training=False)
+
+    step_save_path = os.path.join(eval_save_path, f"step-{step}")
+    os.makedirs(step_save_path, exist_ok=True)
+
+    # Randomly sample if dataset is larger than max_eval_samples
+    total = len(eval_dataset)
+    if max_eval_samples is not None and total > max_eval_samples:
+        sample_indices = sorted(random.sample(range(total), max_eval_samples))
+    else:
+        sample_indices = list(range(total))
+
+    accelerator.print(f"[Evaluation] Running evaluation at step {step} on {len(sample_indices)}/{total} samples...")
+
+    wandb_videos = []
+    for idx in tqdm(sample_indices, desc="Evaluating"):
+        data = eval_dataset[idx]
+        try:
+            # Build inference kwargs
+            kwargs = {
+                "prompt": data.get("prompt", ""),
+                "num_inference_steps": num_inference_steps,
+                "seed": seed,
+                "tiled": True,
+            }
+            video_frames = data.get("video")
+            if video_frames and len(video_frames) > 0:
+                kwargs["height"] = video_frames[0].size[1]
+                kwargs["width"] = video_frames[0].size[0]
+                kwargs["num_frames"] = len(video_frames)
+
+            # Pass extra inputs
+            for key in extra_inputs:
+                if key in data:
+                    val = data[key]
+                    if key.endswith("_image") and isinstance(val, list):
+                        val = val[0]
+                    kwargs[key] = val
+
+            # Run inference
+            with torch.no_grad():
+                frames = pipe(**kwargs, progress_bar_cmd=lambda x: x)
+
+            # Save video to local
+            video_path = os.path.join(step_save_path, f"eval_{idx}.mp4")
+            save_video(frames, video_path, fps=15, quality=5)
+
+            # Collect for wandb
+            if wandb is not None:
+                video_array = np.stack([np.array(f) for f in frames]).transpose(0, 3, 1, 2)
+                wandb_videos.append(wandb.Video(video_array, fps=16, format="mp4", caption=data.get("prompt", "")))
+
+        except Exception as e:
+            accelerator.print(f"[Evaluation] Failed to evaluate sample {idx}: {e}")
+
+    # Log to wandb
+    if wandb is not None and wandb_videos:
+        wandb.log({"eval_videos": wandb_videos}, step=step)
+
+    # Switch back to training mode
+    pipe.scheduler.set_timesteps(1000, training=True)
+
+    accelerator.print(f"[Evaluation] Completed. Videos saved to {step_save_path}")
+
+
 def launch_training_task(
     accelerator: Accelerator,
     dataset: torch.utils.data.Dataset,
@@ -82,11 +160,43 @@ def launch_training_task(
         num_workers = args.dataset_num_workers
         save_steps = args.save_steps
         num_epochs = args.num_epochs
-    
+
     # Wandb
     wandb = _init_wandb(accelerator, args)
     wandb_log_steps = getattr(args, "wandb_log_steps", 100) if args is not None else 100
-    
+
+    # Evaluation config
+    eval_dataset = None
+    eval_steps = None
+    eval_num_inference_steps = 50
+    eval_seed = 0
+    eval_save_path = None
+    eval_extra_inputs = []
+    eval_max_samples = 5
+    if args is not None and getattr(args, "eval_metadata_path", None) is not None:
+        from ..core import UnifiedDataset
+        eval_dataset = UnifiedDataset(
+            base_path=args.dataset_base_path,
+            metadata_path=args.eval_metadata_path,
+            data_file_keys=args.data_file_keys.split(","),
+            main_data_operator=UnifiedDataset.default_video_operator(
+                base_path=args.dataset_base_path,
+                height=getattr(args, "height", None),
+                width=getattr(args, "width", None),
+                num_frames=getattr(args, "num_frames", 81),
+            ),
+        )
+        eval_steps = getattr(args, "eval_steps", 5000)
+        eval_num_inference_steps = getattr(args, "eval_num_inference_steps", 50)
+        eval_seed = getattr(args, "eval_seed", 0)
+        eval_save_path = getattr(args, "eval_save_path", None)
+        if eval_save_path is None:
+            experiment_name = getattr(args, "experiment_name", None) or "default_exp"
+            eval_save_path = os.path.join("logs", experiment_name, "eval_videos")
+        eval_extra_inputs = args.extra_inputs.split(",") if getattr(args, "extra_inputs", None) else []
+        eval_max_samples = getattr(args, "eval_max_samples", 5) or None  # 0 means no limit
+        accelerator.print(f"[Evaluation] Enabled: {len(eval_dataset)} samples (max {eval_max_samples or 'all'} per eval), every {eval_steps} steps, {eval_num_inference_steps} inference steps")
+
     optimizer = torch.optim.AdamW(model.trainable_modules(), lr=learning_rate, weight_decay=weight_decay)
     scheduler = torch.optim.lr_scheduler.ConstantLR(optimizer)
     dataloader = torch.utils.data.DataLoader(dataset, shuffle=True, collate_fn=lambda x: x[0], num_workers=num_workers)
@@ -95,7 +205,7 @@ def launch_training_task(
     initialize_deepspeed_gradient_checkpointing(accelerator)
 
     accelerator.register_for_checkpointing(model_logger)
-    
+
     if getattr(args, "resume_from_checkpoint", None) is not None:
         accelerator.print(f"Resuming from checkpoint: {args.resume_from_checkpoint}")
         accelerator.load_state(args.resume_from_checkpoint)
@@ -126,6 +236,17 @@ def launch_training_task(
                     with torch.no_grad():
                         _log_wandb_video(wandb, pipe, data, extra_inputs, model_logger.num_steps)
                     pipe.scheduler.set_timesteps(1000, training=True)
+                # Evaluation
+                if eval_dataset is not None and eval_steps is not None and model_logger.num_steps % eval_steps == 0:
+                    accelerator.wait_for_everyone()
+                    _run_evaluation(
+                        accelerator, model, eval_dataset, eval_save_path,
+                        model_logger.num_steps, wandb=wandb,
+                        num_inference_steps=eval_num_inference_steps,
+                        seed=eval_seed, extra_inputs=eval_extra_inputs,
+                        max_eval_samples=eval_max_samples,
+                    )
+                    accelerator.wait_for_everyone()
         if save_steps is None:
             model_logger.on_epoch_end(accelerator, model, epoch_id)
     model_logger.on_training_end(accelerator, model, save_steps)

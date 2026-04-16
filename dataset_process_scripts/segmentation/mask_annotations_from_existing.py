@@ -49,10 +49,25 @@ def get_parser():
         default=None,
         help="Ratio of mask augmentation.")
     parser.add_argument(
+        "--maskaug_iters",
+        type=int,
+        default=7,
+        help="Number of dilation iterations for mask augmentation (default: 5).")
+    parser.add_argument(
         "--save_fps",
         type=int,
         default=16,
         help="FPS for saved video output.")
+    parser.add_argument(
+        "--start_idx",
+        type=int,
+        default=None,
+        help="Start index (inclusive) for subdirectory processing slice.")
+    parser.add_argument(
+        "--end_idx",
+        type=int,
+        default=None,
+        help="End index (exclusive) for subdirectory processing slice.")
     return parser
 
 
@@ -125,7 +140,7 @@ def parse_maskaug_config(args):
                 weights.append(1.0)
         maskaug_mode = random.choices(modes, weights=weights, k=1)[0]
         if args.maskaug_ratio is not None:
-            mask_cfg = {"mode": maskaug_mode, "kwargs": {'expand_ratio': args.maskaug_ratio, 'expand_iters': 5}}
+            mask_cfg = {"mode": maskaug_mode, "kwargs": {'expand_ratio': args.maskaug_ratio, 'expand_iters': args.maskaug_iters}}
         else:
             mask_cfg = {"mode": maskaug_mode}
     return mask_cfg
@@ -154,6 +169,12 @@ def main(args):
     if not subdirs:
         print(f"No subdirectories found in {video_dir}")
         return
+
+    total = len(subdirs)
+    start_idx = args.start_idx if args.start_idx is not None else 0
+    end_idx = args.end_idx if args.end_idx is not None else total
+    subdirs = subdirs[start_idx:end_idx]
+    print(f"Total subdirectories: {total}, processing [{start_idx}:{end_idx}] ({len(subdirs)} items)")
 
     for subdir in subdirs:
         pre_save_dir = os.path.join(video_dir, subdir)

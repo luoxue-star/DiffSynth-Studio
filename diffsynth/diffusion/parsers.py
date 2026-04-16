@@ -61,6 +61,15 @@ def add_gradient_config(parser: argparse.ArgumentParser):
     return parser
 
 
+def add_eval_config(parser: argparse.ArgumentParser):
+    parser.add_argument("--eval_metadata_path", type=str, default=None, help="Path to evaluation dataset metadata CSV. If set, enables periodic evaluation during training.")
+    parser.add_argument("--eval_steps", type=int, default=5000, help="Run evaluation every N steps.")
+    parser.add_argument("--eval_num_inference_steps", type=int, default=50, help="Number of inference steps for evaluation.")
+    parser.add_argument("--eval_seed", type=int, default=0, help="Random seed for evaluation inference.")
+    parser.add_argument("--eval_save_path", type=str, default=None, help="Path to save evaluation videos. Defaults to logs/{experiment_name}/eval_videos.")
+    parser.add_argument("--eval_max_samples", type=int, default=5, help="Max number of samples to evaluate per step. If the eval dataset is larger, samples are randomly chosen. Set to 0 for no limit.")
+    return parser
+
 def add_general_config(parser: argparse.ArgumentParser):
     parser = add_dataset_base_config(parser)
     parser = add_model_config(parser)
@@ -68,4 +77,5 @@ def add_general_config(parser: argparse.ArgumentParser):
     parser = add_output_config(parser)
     parser = add_lora_config(parser)
     parser = add_gradient_config(parser)
+    parser = add_eval_config(parser)
     return parser
