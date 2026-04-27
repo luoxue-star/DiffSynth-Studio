@@ -57,6 +57,15 @@ class VaceWanModel(torch.nn.Module):
     ):
         c = [self.vace_patch_embedding(u.unsqueeze(0)) for u in vace_context]
         c = [u.flatten(2).transpose(1, 2) for u in c]
+        for i, u in enumerate(c):
+            pad_len = x.shape[1] - u.size(1)
+            if pad_len < 0:
+                print(f"\n{'='*80}")
+                print(f"[VACE ERROR] Negative padding detected in sample {i}!")
+                print(f"[VACE ERROR] x.shape={x.shape} (token dim={x.shape[1]}), u.shape={u.shape} (token dim={u.size(1)})")
+                print(f"[VACE ERROR] pad_len={pad_len} (x needs {-pad_len} more tokens to match vace_context)")
+                print(f"[VACE ERROR] vace_context[{i}] raw shape before patch_embedding: {vace_context[i].shape}")
+                print(f"{'='*80}\n", flush=True)
         c = torch.cat([
             torch.cat([u, u.new_zeros(1, x.shape[1] - u.size(1), u.size(2))],
                       dim=1) for u in c

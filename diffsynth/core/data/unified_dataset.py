@@ -92,6 +92,8 @@ class UnifiedDataset(torch.utils.data.Dataset):
             data = self.cached_data_operator(data)
         else:
             data = self.data[data_id % len(self.data)].copy()
+            data["__raw_metadata__"] = {k: v for k, v in data.items() if isinstance(v, (str, int, float, bool, type(None)))}
+            data["__data_id__"] = data_id % len(self.data)
             for key in self.data_file_keys:
                 if key in data:
                     if key in self.special_operator_map:

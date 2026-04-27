@@ -4,7 +4,7 @@ DATASET_METADATA_PATH="/mmu_mllm_hdd_2/jinlv/VideoEditing/data/Custom/VACEv2/met
 DATA_FILE_KEYS="video,vace_video,vace_video_mask,vace_reference_image"
 EXTRA_INPUTS="vace_video,vace_video_mask,vace_reference_image"
 WANDB_PROJECT="VACE"
-EXPERIMENT_NAME="Wan2.2-VACE-14B_full"
+EXPERIMENT_NAME="Wan2.2-VACE-14B_lora"
 WANDB_MODE="online"
 WANDB_LOG_STEPS=500
 WANDB_RUN_ID=""
@@ -16,7 +16,6 @@ EVAL_STEPS=1000
 EVAL_NUM_INFERENCE_STEPS=""
 EVAL_SEED=""
 EVAL_SAVE_PATH="logs/${EXPERIMENT_NAME}/eval"
-NUM_PROCESSES=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -92,21 +91,17 @@ while [[ $# -gt 0 ]]; do
       EVAL_SAVE_PATH="$2"
       shift 2
       ;;
-    --num_processes)
-      NUM_PROCESSES="$2"
-      shift 2
-      ;;
     *)
       echo "Unknown argument: $1"
-      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps --wandb_run_id --resume_from_checkpoint_high --resume_from_checkpoint_low --timestep_boundary --eval_metadata_path --eval_steps --eval_num_inference_steps --eval_seed --eval_save_path --num_processes"
+      echo "Supported arguments: --checkpoint_dir --dataset_base_path --dataset_metadata_path --data_file_keys --extra_inputs --wandb_project --experiment_name --wandb_mode --wandb_log_steps --wandb_run_id --resume_from_checkpoint_high --resume_from_checkpoint_low --timestep_boundary --eval_metadata_path --eval_steps --eval_num_inference_steps --eval_seed --eval_save_path"
       exit 1
       ;;
   esac
 done
 
-# === High Noise Model: VACE Training ===
+# === High Noise Model: VACE LoRA Training ===
 # Timestep range: [boundary*1000, 1000]
-accelerate launch --config_file examples/wanvideo/model_training/full/accelerate_config_14B.yaml ${NUM_PROCESSES:+--num_processes "$NUM_PROCESSES"} -m examples.wanvideo.model_training.train \
+accelerate launch -m examples.wanvideo.model_training.train \
   --dataset_base_path "${DATASET_BASE_PATH}" \
   --dataset_metadata_path "${DATASET_METADATA_PATH}" \
   --data_file_keys "${DATA_FILE_KEYS}" \
@@ -116,11 +111,13 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --dataset_repeat 1 \
   --model_id_with_origin_paths "Wan-AI/Wan2.2-T2V-A14B:high_noise_model/diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-T2V-A14B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-T2V-A14B:Wan2.1_VAE.pth" \
   --init_vace_from_dit \
-  --learning_rate 5e-5 \
+  --learning_rate 1e-4 \
   --num_epochs 5 \
   --remove_prefix_in_ckpt "pipe.vace." \
   --output_path "logs/${EXPERIMENT_NAME}/checkpoints_high_noise" \
-  --trainable_models "vace" \
+  --lora_base_model "vace" \
+  --lora_target_modules "q,k,v,o,ffn.0,ffn.2" \
+  --lora_rank 32 \
   --extra_inputs "${EXTRA_INPUTS}" \
   --use_gradient_checkpointing \
   --max_timestep_boundary "${TIMESTEP_BOUNDARY}" \
@@ -137,9 +134,9 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   ${EVAL_SEED:+--eval_seed "$EVAL_SEED"} \
   ${EVAL_SAVE_PATH:+--eval_save_path "$EVAL_SAVE_PATH"}
 
-# === Low Noise Model: VACE Training ===
+# === Low Noise Model: VACE LoRA Training ===
 # Timestep range: [0, boundary*1000)
-accelerate launch --config_file examples/wanvideo/model_training/full/accelerate_config_14B.yaml ${NUM_PROCESSES:+--num_processes "$NUM_PROCESSES"} -m examples.wanvideo.model_training.train \
+accelerate launch -m examples.wanvideo.model_training.train \
   --dataset_base_path "${DATASET_BASE_PATH}" \
   --dataset_metadata_path "${DATASET_METADATA_PATH}" \
   --data_file_keys "${DATA_FILE_KEYS}" \
@@ -149,11 +146,13 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
   --dataset_repeat 1 \
   --model_id_with_origin_paths "Wan-AI/Wan2.2-T2V-A14B:low_noise_model/diffusion_pytorch_model*.safetensors,Wan-AI/Wan2.2-T2V-A14B:models_t5_umt5-xxl-enc-bf16.pth,Wan-AI/Wan2.2-T2V-A14B:Wan2.1_VAE.pth" \
   --init_vace_from_dit \
-  --learning_rate 5e-5 \
+  --learning_rate 1e-4 \
   --num_epochs 5 \
   --remove_prefix_in_ckpt "pipe.vace." \
   --output_path "logs/${EXPERIMENT_NAME}/checkpoints_low_noise" \
-  --trainable_models "vace" \
+  --lora_base_model "vace" \
+  --lora_target_modules "q,k,v,o,ffn.0,ffn.2" \
+  --lora_rank 32 \
   --extra_inputs "${EXTRA_INPUTS}" \
   --use_gradient_checkpointing \
   --max_timestep_boundary 1 \
@@ -174,6 +173,6 @@ accelerate launch --config_file examples/wanvideo/model_training/full/accelerate
 # Default boundary 0.417 corresponds to timesteps [875, 1000] for high noise and [0, 875) for low noise.
 # VACE is initialized from the DiT backbone weights at corresponding layer positions.
 # Example:
-# bash examples/wanvideo/model_training/full/Wan2.2-VACE-14B.sh
-# With custom boundary (e.g., 0.358 like VACE-Fun):
-# bash examples/wanvideo/model_training/full/Wan2.2-VACE-14B.sh --timestep_boundary 0.358
+# bash examples/wanvideo/model_training/lora/Wan2.2-VACE-14B.sh
+# With custom boundary:
+# bash examples/wanvideo/model_training/lora/Wan2.2-VACE-14B.sh --timestep_boundary 0.358

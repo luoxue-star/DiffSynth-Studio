@@ -23,6 +23,8 @@ class WanTrainingModule(DiffusionTrainingModule):
         task="sft",
         max_timestep_boundary=1.0,
         min_timestep_boundary=0.0,
+        init_vace_from_dit=False,
+        vace_kwargs=None,
     ):
         super().__init__()
         # Warning
@@ -35,6 +37,11 @@ class WanTrainingModule(DiffusionTrainingModule):
         tokenizer_config = ModelConfig(model_id="Wan-AI/Wan2.1-T2V-1.3B", origin_file_pattern="google/umt5-xxl/") if tokenizer_path is None else ModelConfig(tokenizer_path)
         audio_processor_config = self.parse_path_or_model_id(audio_processor_path)
         self.pipe = WanVideoPipeline.from_pretrained(torch_dtype=torch.bfloat16, device=device, model_configs=model_configs, tokenizer_config=tokenizer_config, audio_processor_config=audio_processor_config)
+
+        # Initialize VACE from DiT backbone weights
+        if init_vace_from_dit:
+            self.pipe.vace = self._init_vace_from_dit(self.pipe.dit, vace_kwargs, device)
+
         self.pipe = self.split_pipeline_units(task, self.pipe, trainable_models, lora_base_model)
         
         # Training mode
@@ -62,6 +69,33 @@ class WanTrainingModule(DiffusionTrainingModule):
         self.max_timestep_boundary = max_timestep_boundary
         self.min_timestep_boundary = min_timestep_boundary
         
+    def _init_vace_from_dit(self, dit, vace_kwargs, device):
+        import json as json_module
+        from diffsynth.models.wan_video_vace import VaceWanModel
+        default_kwargs = {
+            'vace_layers': (0, 5, 10, 15, 20, 25, 30, 35),
+            'vace_in_dim': 96,
+            'patch_size': (1, 2, 2),
+            'has_image_input': False,
+            'dim': 5120,
+            'num_heads': 40,
+            'ffn_dim': 13824,
+            'eps': 1e-06,
+        }
+        if vace_kwargs:
+            default_kwargs.update(json_module.loads(vace_kwargs))
+        vace = VaceWanModel(**default_kwargs)
+        # Copy weights from dit blocks at corresponding layer positions
+        for idx, layer_id in enumerate(default_kwargs['vace_layers']):
+            dit_block_state = dit.blocks[layer_id].state_dict()
+            load_result = vace.vace_blocks[idx].load_state_dict(dit_block_state, strict=False)
+            if load_result.missing_keys:
+                print(f"VACE block {idx} (from dit layer {layer_id}): initialized {len(dit_block_state)} keys from dit, "
+                      f"missing keys (VACE-specific, default init): {load_result.missing_keys}")
+        vace = vace.to(dtype=torch.bfloat16, device=device)
+        print(f"VACE initialized from DiT backbone with layers {default_kwargs['vace_layers']}")
+        return vace
+
     def parse_extra_inputs(self, data, extra_inputs, inputs_shared):
         for extra_input in extra_inputs:
             if extra_input == "input_image":
@@ -107,7 +141,18 @@ class WanTrainingModule(DiffusionTrainingModule):
         inputs = self.transfer_data_to_device(inputs, self.pipe.device, self.pipe.torch_dtype)
         for unit in self.pipe.units:
             inputs = self.pipe.unit_runner(unit, self.pipe, *inputs)
-        loss = self.task_to_loss[self.task](self.pipe, *inputs)
+        try:
+            loss = self.task_to_loss[self.task](self.pipe, *inputs)
+        except RuntimeError as e:
+            raw_meta = data.get("__raw_metadata__", {})
+            data_id = data.get("__data_id__", "unknown")
+            print(f"\n{'='*80}")
+            print(f"[ERROR] RuntimeError during loss computation!")
+            print(f"[ERROR] Data ID: {data_id}")
+            print(f"[ERROR] Raw metadata: {raw_meta}")
+            print(f"[ERROR] Exception: {e}")
+            print(f"{'='*80}\n", flush=True)
+            raise
         return loss
 
 
@@ -120,6 +165,8 @@ def wan_parser():
     parser.add_argument("--max_timestep_boundary", type=float, default=1.0, help="Max timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--min_timestep_boundary", type=float, default=0.0, help="Min timestep boundary (for mixed models, e.g., Wan-AI/Wan2.2-I2V-A14B).")
     parser.add_argument("--initialize_model_on_cpu", default=False, action="store_true", help="Whether to initialize models on CPU.")
+    parser.add_argument("--init_vace_from_dit", default=False, action="store_true", help="Initialize VACE context encoder by copying weights from the loaded DiT backbone at corresponding layer positions.")
+    parser.add_argument("--vace_kwargs", type=str, default=None, help="VACE model kwargs in JSON format. Default uses Wan2.1-VACE-14B architecture.")
     parser.add_argument("--wandb_project", type=str, default=None, help="Wandb project name. If set, enables wandb logging.")
     parser.add_argument("--experiment_name", type=str, default=None, help="Experiment name for wandb. Defaults to the output path folder name.")
     parser.add_argument("--wandb_mode", type=str, default="online", choices=["online", "offline", "disabled"], help="Wandb mode: online, offline, or disabled.")
@@ -180,6 +227,8 @@ if __name__ == "__main__":
         device="cpu" if args.initialize_model_on_cpu else accelerator.device,
         max_timestep_boundary=args.max_timestep_boundary,
         min_timestep_boundary=args.min_timestep_boundary,
+        init_vace_from_dit=args.init_vace_from_dit,
+        vace_kwargs=args.vace_kwargs,
     )
     model_logger = ModelLogger(
         args.output_path,
